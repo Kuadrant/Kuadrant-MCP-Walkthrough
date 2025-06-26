@@ -21,13 +21,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 
 	extProcPb "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
-	"github.com/go-logr/logr"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"sigs.k8s.io/controller-runtime/pkg/log"
-	logutil "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/util/logging"
 	requtil "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/util/request"
 )
 
@@ -43,9 +41,7 @@ type Server struct {
 
 func (s *Server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 	ctx := srv.Context()
-	logger := log.FromContext(ctx)
-	loggerVerbose := logger.V(logutil.VERBOSE)
-	loggerVerbose.Info("Processing")
+	log.Println("Processing new request")
 
 	streamedBody := &streamedBody{}
 
@@ -61,9 +57,7 @@ func (s *Server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 			return nil
 		}
 		if recvErr != nil {
-			// This error occurs very frequently, though it doesn't seem to have any impact.
-			// TODO Figure out if we can remove this noise.
-			loggerVerbose.Error(recvErr, "Cannot receive stream request")
+			log.Printf("Cannot receive stream request: %v", recvErr)
 			return status.Errorf(codes.Unknown, "cannot receive stream request: %v", recvErr)
 		}
 
@@ -73,18 +67,16 @@ func (s *Server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 		case *extProcPb.ProcessingRequest_RequestHeaders:
 			if s.streaming && !req.GetRequestHeaders().GetEndOfStream() {
 				// If streaming and the body is not empty, then headers are handled when processing request body.
-				loggerVerbose.Info("Received headers, passing off header processing until body arrives...")
+				log.Println("Received headers, passing off header processing until body arrives...")
 			} else {
 				if requestId := requtil.ExtractHeaderValue(v, requtil.RequestIdHeaderKey); len(requestId) > 0 {
-					logger = logger.WithValues(requtil.RequestIdHeaderKey, requestId)
-					loggerVerbose = logger.V(logutil.VERBOSE)
-					ctx = log.IntoContext(ctx, logger)
+					log.Printf("Processing request with ID: %s", requestId)
 				}
 				responses, err = s.HandleRequestHeaders(req.GetRequestHeaders())
 			}
 		case *extProcPb.ProcessingRequest_RequestBody:
-			loggerVerbose.Info("Incoming body chunk", "body", string(v.RequestBody.Body), "EoS", v.RequestBody.EndOfStream)
-			responses, err = s.processRequestBody(ctx, req.GetRequestBody(), streamedBody, logger)
+			log.Printf("Incoming body chunk: %s (EoS: %t)", string(v.RequestBody.Body), v.RequestBody.EndOfStream)
+			responses, err = s.processRequestBody(ctx, req.GetRequestBody(), streamedBody)
 		case *extProcPb.ProcessingRequest_RequestTrailers:
 			responses, err = s.HandleRequestTrailers(req.GetRequestTrailers())
 		case *extProcPb.ProcessingRequest_ResponseHeaders:
@@ -92,19 +84,19 @@ func (s *Server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 		case *extProcPb.ProcessingRequest_ResponseBody:
 			responses, err = s.HandleResponseBody(req.GetResponseBody())
 		default:
-			logger.V(logutil.DEFAULT).Error(nil, "Unknown Request type", "request", v)
+			log.Printf("Unknown Request type: %T", v)
 			return status.Error(codes.Unknown, "unknown request type")
 		}
 
 		if err != nil {
-			logger.V(logutil.DEFAULT).Error(err, "Failed to process request", "request", req)
+			log.Printf("Failed to process request: %v", err)
 			return status.Errorf(status.Code(err), "failed to handle request: %v", err)
 		}
 
 		for _, resp := range responses {
-			loggerVerbose.Info("Response generated", "response", resp)
+			log.Printf("Response generated: %+v", resp)
 			if err := srv.Send(resp); err != nil {
-				logger.V(logutil.DEFAULT).Error(err, "Send failed")
+				log.Printf("Send failed: %v", err)
 				return status.Errorf(codes.Unknown, "failed to send response back to Envoy: %v", err)
 			}
 		}
@@ -115,18 +107,17 @@ type streamedBody struct {
 	body []byte
 }
 
-func (s *Server) processRequestBody(ctx context.Context, body *extProcPb.HttpBody, streamedBody *streamedBody, logger logr.Logger) ([]*extProcPb.ProcessingResponse, error) {
-	loggerVerbose := logger.V(logutil.VERBOSE)
+func (s *Server) processRequestBody(ctx context.Context, body *extProcPb.HttpBody, streamedBody *streamedBody) ([]*extProcPb.ProcessingResponse, error) {
 
 	var requestBody map[string]interface{}
 	if s.streaming {
 		streamedBody.body = append(streamedBody.body, body.Body...)
 		// In the stream case, we can receive multiple request bodies.
 		if body.EndOfStream {
-			loggerVerbose.Info("Flushing stream buffer")
+			log.Println("Flushing stream buffer")
 			err := json.Unmarshal(streamedBody.body, &requestBody)
 			if err != nil {
-				logger.V(logutil.DEFAULT).Error(err, "Error unmarshaling request body")
+				log.Printf("Error unmarshaling request body: %v", err)
 			}
 		} else {
 			return nil, nil

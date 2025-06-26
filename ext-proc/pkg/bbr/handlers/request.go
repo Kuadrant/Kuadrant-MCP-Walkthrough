@@ -19,21 +19,33 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"log"
+	"time"
 
 	basepb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	eppb "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	extProcPb "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/metrics"
-	logutil "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/util/logging"
 )
 
-const modelHeader = "X-Gateway-Model-Name"
+const methodHeader = "x-rpc-method"
 
-// HandleRequestBody handles request bodies.
+// JSONRPCRequest represents a simple JSON-RPC request structure
+type JSONRPCRequest struct {
+	JSONRPC string      `json:"jsonrpc"`
+	ID      interface{} `json:"id"`
+	Method  string      `json:"method"`
+	Params  interface{} `json:"params"`
+}
+
+// HandleRequestBody handles request bodies for JSON-RPC messages.
 func (s *Server) HandleRequestBody(ctx context.Context, data map[string]any) ([]*eppb.ProcessingResponse, error) {
-	logger := log.FromContext(ctx)
+	log.Println("[EXT-PROC] Starting request body processing...")
+
+	// Add 500ms delay for debugging execution order
+	log.Println("[EXT-PROC] Adding 500ms delay for request body processing...")
+	time.Sleep(500 * time.Millisecond)
+
 	var ret []*eppb.ProcessingResponse
 
 	requestBodyBytes, err := json.Marshal(data)
@@ -41,10 +53,11 @@ func (s *Server) HandleRequestBody(ctx context.Context, data map[string]any) ([]
 		return nil, err
 	}
 
-	modelVal, ok := data["model"]
-	if !ok {
-		metrics.RecordModelNotInBodyCounter()
-		logger.V(logutil.DEFAULT).Info("Request body does not contain model parameter")
+	// Try to parse as JSON-RPC request
+	methodName := extractJSONRPCMethod(data)
+
+	if methodName == "" {
+		log.Println("Request body does not contain JSON-RPC method or method could not be extracted")
 		if s.streaming {
 			ret = append(ret, &eppb.ProcessingResponse{
 				Response: &eppb.ProcessingResponse_RequestHeaders{
@@ -63,13 +76,7 @@ func (s *Server) HandleRequestBody(ctx context.Context, data map[string]any) ([]
 		return ret, nil
 	}
 
-	modelStr, ok := modelVal.(string)
-	if !ok {
-		metrics.RecordModelNotParsedCounter()
-		logger.V(logutil.DEFAULT).Info("Model parameter value is not a string")
-		return nil, fmt.Errorf("the model parameter value %v is not a string", modelVal)
-	}
-
+	log.Printf("[EXT-PROC] Extracted JSON-RPC method: %s", methodName)
 	metrics.RecordSuccessCounter()
 
 	if s.streaming {
@@ -82,8 +89,8 @@ func (s *Server) HandleRequestBody(ctx context.Context, data map[string]any) ([]
 							SetHeaders: []*basepb.HeaderValueOption{
 								{
 									Header: &basepb.HeaderValue{
-										Key:      modelHeader,
-										RawValue: []byte(modelStr),
+										Key:      methodHeader,
+										RawValue: []byte(methodName),
 									},
 								},
 							},
@@ -93,9 +100,11 @@ func (s *Server) HandleRequestBody(ctx context.Context, data map[string]any) ([]
 			},
 		})
 		ret = addStreamedBodyResponse(ret, requestBodyBytes)
+		log.Println("[EXT-PROC] Completed request body processing (streaming)")
 		return ret, nil
 	}
 
+	log.Println("[EXT-PROC] Completed request body processing (non-streaming)")
 	return []*eppb.ProcessingResponse{
 		{
 			Response: &eppb.ProcessingResponse_RequestBody{
@@ -107,8 +116,8 @@ func (s *Server) HandleRequestBody(ctx context.Context, data map[string]any) ([]
 							SetHeaders: []*basepb.HeaderValueOption{
 								{
 									Header: &basepb.HeaderValue{
-										Key:      modelHeader,
-										RawValue: []byte(modelStr),
+										Key:      methodHeader,
+										RawValue: []byte(methodName),
 									},
 								},
 							},
@@ -118,6 +127,38 @@ func (s *Server) HandleRequestBody(ctx context.Context, data map[string]any) ([]
 			},
 		},
 	}, nil
+}
+
+// extractJSONRPCMethod safely extracts the method from JSON-RPC request
+func extractJSONRPCMethod(data map[string]any) string {
+	// Check if this is a JSON-RPC request
+	jsonrpcVal, ok := data["jsonrpc"]
+	if !ok {
+		log.Println("Request is not JSON-RPC format (missing jsonrpc field)")
+		return ""
+	}
+
+	jsonrpcStr, ok := jsonrpcVal.(string)
+	if !ok || jsonrpcStr != "2.0" {
+		log.Println("Request is not JSON-RPC 2.0 format")
+		return ""
+	}
+
+	// Extract method field
+	methodVal, ok := data["method"]
+	if !ok {
+		log.Println("JSON-RPC request missing method field")
+		return ""
+	}
+
+	methodStr, ok := methodVal.(string)
+	if !ok {
+		log.Println("JSON-RPC method is not a string")
+		return ""
+	}
+
+	log.Printf("Found JSON-RPC method: %s", methodStr)
+	return methodStr
 }
 
 func addStreamedBodyResponse(responses []*eppb.ProcessingResponse, requestBodyBytes []byte) []*eppb.ProcessingResponse {
@@ -141,6 +182,14 @@ func addStreamedBodyResponse(responses []*eppb.ProcessingResponse, requestBodyBy
 
 // HandleRequestHeaders handles request headers.
 func (s *Server) HandleRequestHeaders(headers *eppb.HttpHeaders) ([]*eppb.ProcessingResponse, error) {
+	log.Println("[EXT-PROC] Starting request header processing...")
+
+	// Add 500ms delay for debugging execution order
+	log.Println("[EXT-PROC] Adding 500ms delay for debugging...")
+	time.Sleep(500 * time.Millisecond)
+
+	log.Println("[EXT-PROC] Completed request header processing")
+
 	return []*eppb.ProcessingResponse{
 		{
 			Response: &eppb.ProcessingResponse_RequestHeaders{

@@ -16,15 +16,17 @@
 services:
   envoy:
     depends_on:
-    - upstream-a
-    - upstream-b
+    - echo1
+    - echo2
     container_name: envoy
     image: envoyproxy/envoy:v1.31-latest
     hostname: envoy
     ports:
+      - "9901:9901"
       - "10000:10000"
     volumes:
       - ./envoy.yaml:/etc/envoy/envoy.yaml
+      - ./target/wasm32-wasip1/release/debug_wasm_filter.wasm:/etc/envoy/debug_wasm_filter.wasm
     networks:
       - envoymesh
   ext-proc:
@@ -35,44 +37,21 @@ services:
     - "50051"
     networks:
       - envoymesh
-  upstream-a:
-    depends_on:
-    - upstream-a-backend
-    image: quay.io/openshift-logging/alpine-socat:1.8.0.0
-    container_name: upstream-a
-    command: "-d -d -v -d TCP-LISTEN:80,reuseaddr,fork TCP:upstream-a-backend:3000"
+
+  echo1:
+    image: hashicorp/http-echo:latest
+    container_name: echo1
+    command: ["-text=Hello from Echo Server 1!", "-listen=:8080"]
     expose:
-      - "80"
-    restart: unless-stopped
+    - "8080"
     networks:
       - envoymesh
-  upstream-b:
-    depends_on:
-    - upstream-b-backend
-    image: quay.io/openshift-logging/alpine-socat:1.8.0.0
-    container_name: upstream-b
-    command: "-d -d -v -d TCP-LISTEN:80,reuseaddr,fork TCP:upstream-b-backend:3000"
+  echo2:
+    image: hashicorp/http-echo:latest
+    container_name: echo2
+    command: ["-text=Hello from Echo Server 2!", "-listen=:8080"]
     expose:
-      - "80"
-    restart: unless-stopped
-    networks:
-      - envoymesh
-  upstream-a-backend:
-    image: quay.io/kuadrant/authorino-examples:talker-api
-    environment:
-      PORT: 3000
-      LOG_LEVEL: debug
-    expose:
-    - "3000"
-    networks:
-      - envoymesh
-  upstream-b-backend:
-    image: quay.io/kuadrant/authorino-examples:talker-api
-    environment:
-      PORT: 3000
-      LOG_LEVEL: debug
-    expose:
-    - "3000"
+    - "8080"
     networks:
       - envoymesh
 networks:

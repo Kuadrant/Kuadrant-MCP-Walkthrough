@@ -26,6 +26,8 @@ static_resources:
               "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
               stat_prefix: ingress_http
               codec_type: AUTO
+              request_timeout: 30s
+              stream_idle_timeout: 30s
               route_config:
                 name: local_routes
                 virtual_hosts:
@@ -33,23 +35,37 @@ static_resources:
                     domains:
                       - "*"
                     routes:
+                      # Route JSON-RPC calls based on method names
                       - match:
                           prefix: "/"
                           headers:
-                            - name: "x-upstream"
+                            - name: "x-rpc-method"
                               string_match:
-                                exact: "a"
+                                exact: "echo1"
                         route:
-                          cluster: upstream-a
+                          cluster: echo1
+                          timeout: 30s
+                      - match:
+                          prefix: "/"
+                          headers:
+                            - name: "x-rpc-method"
+                              string_match:
+                                exact: "echo2"
+                        route:
+                          cluster: echo2
+                          timeout: 30s
+                      # Default route to echo2
                       - match:
                           prefix: "/"
                         route:
-                          cluster: upstream-b
+                          cluster: echo2
+                          timeout: 30s
               http_filters:
                 - name: envoy.filters.http.ext_proc
                   typed_config:
                     "@type": "type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor"
                     failure_mode_allow: false
+                    message_timeout: 10s
                     processing_mode:
                       request_header_mode: "SEND"
                       response_header_mode: "SEND"
@@ -60,36 +76,49 @@ static_resources:
                     grpc_service:
                       envoy_grpc:
                         cluster_name: ext-proc
+                - name: envoy.filters.http.wasm
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
+                    config:
+                      name: "debug_wasm_filter"
+                      root_id: "debug_wasm_filter_root"
+                      vm_config:
+                        vm_id: "my_vm"
+                        runtime: "envoy.wasm.runtime.v8"
+                        code:
+                          local:
+                            filename: "/etc/envoy/debug_wasm_filter.wasm"
+                        allow_precompiled: true
                 - name: envoy.filters.http.router
                   typed_config:
                     "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
   clusters:
-    - name: upstream-a
+    - name: echo1
       connect_timeout: 0.25s
       type: STRICT_DNS
       lb_policy: round_robin
       load_assignment:
-        cluster_name: upstream-a
+        cluster_name: echo1
         endpoints:
         - lb_endpoints:
           - endpoint:
               address:
                 socket_address:
-                  address: upstream-a
-                  port_value: 80
-    - name: upstream-b
+                  address: echo1
+                  port_value: 8080
+    - name: echo2
       connect_timeout: 0.25s
       type: STRICT_DNS
       lb_policy: round_robin
       load_assignment:
-        cluster_name: upstream-b
+        cluster_name: echo2
         endpoints:
         - lb_endpoints:
           - endpoint:
               address:
                 socket_address:
-                  address: upstream-b
-                  port_value: 80
+                  address: echo2
+                  port_value: 8080
     - name: ext-proc
       connect_timeout: 5s
       type: strict_dns
@@ -102,5 +131,18 @@ static_resources:
               - endpoint:
                   address:
                     socket_address:
-                      address: ext_proc
+                      address: ext-proc
                       port_value: 50051
+      health_checks:
+        - timeout: 1s
+          interval: 2s
+          unhealthy_threshold: 1
+          healthy_threshold: 1
+          grpc_health_check:
+            service_name: ""
+admin:
+  access_log_path: "/dev/null"
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901

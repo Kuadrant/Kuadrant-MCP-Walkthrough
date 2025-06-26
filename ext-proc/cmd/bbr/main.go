@@ -16,6 +16,8 @@ import (
 )
 
 func main() {
+	log.Println("Starting ext-proc filter")
+
 	// grpc server init
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
@@ -26,7 +28,7 @@ func main() {
 
 	extProcPb.RegisterExternalProcessorServer(s, handlers.NewServer(false))
 
-	log.Println("Starting gRPC server on port :50051")
+	log.Println("Starting ext-proc server on port :50051")
 
 	// shutdown
 	var gracefulStop = make(chan os.Signal)
