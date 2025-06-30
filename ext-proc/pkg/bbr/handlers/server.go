@@ -77,8 +77,6 @@ func (s *Server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 		case *extProcPb.ProcessingRequest_RequestBody:
 			log.Printf("Incoming body chunk: %s (EoS: %t)", string(v.RequestBody.Body), v.RequestBody.EndOfStream)
 			responses, err = s.processRequestBody(ctx, req.GetRequestBody(), streamedBody)
-		case *extProcPb.ProcessingRequest_RequestTrailers:
-			responses, err = s.HandleRequestTrailers(req.GetRequestTrailers())
 		case *extProcPb.ProcessingRequest_ResponseHeaders:
 			responses, err = s.HandleResponseHeaders(req.GetResponseHeaders())
 		case *extProcPb.ProcessingRequest_ResponseBody:

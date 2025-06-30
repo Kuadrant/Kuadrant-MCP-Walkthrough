@@ -16,8 +16,7 @@
 services:
   envoy:
     depends_on:
-    - echo1
-    - echo2
+    - mcp-server
     container_name: envoy
     image: envoyproxy/envoy:v1.31-latest
     hostname: envoy
@@ -38,20 +37,11 @@ services:
     networks:
       - envoymesh
 
-  echo1:
-    image: hashicorp/http-echo:latest
-    container_name: echo1
-    command: ["-text=Hello from Echo Server 1!", "-listen=:8080"]
+  mcp-server:
+    image: quay.io/dmartin/mcp-gateway-poc-server1
+    container_name: mcp-server
     expose:
-    - "8080"
-    networks:
-      - envoymesh
-  echo2:
-    image: hashicorp/http-echo:latest
-    container_name: echo2
-    command: ["-text=Hello from Echo Server 2!", "-listen=:8080"]
-    expose:
-    - "8080"
+    - "8081"
     networks:
       - envoymesh
 networks:

@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"time"
 
 	basepb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	eppb "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
@@ -28,55 +27,40 @@ import (
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/metrics"
 )
 
-const methodHeader = "x-rpc-method"
+const toolHeader = "x-mcp-tool"
 
-// JSONRPCRequest represents a simple JSON-RPC request structure
-type JSONRPCRequest struct {
+// MCPToolCall represents an MCP tool call request structure
+type MCPToolCall struct {
 	JSONRPC string      `json:"jsonrpc"`
 	ID      interface{} `json:"id"`
 	Method  string      `json:"method"`
-	Params  interface{} `json:"params"`
+	Params  struct {
+		Name      string                 `json:"name"`
+		Arguments map[string]interface{} `json:"arguments"`
+	} `json:"params"`
 }
 
-// HandleRequestBody handles request bodies for JSON-RPC messages.
+// HandleRequestBody handles request bodies for MCP tool calls.
 func (s *Server) HandleRequestBody(ctx context.Context, data map[string]any) ([]*eppb.ProcessingResponse, error) {
-	log.Println("[EXT-PROC] Starting request body processing...")
-
-	// Add 500ms delay for debugging execution order
-	log.Println("[EXT-PROC] Adding 500ms delay for request body processing...")
-	time.Sleep(500 * time.Millisecond)
+	log.Println("[EXT-PROC] Processing request body for MCP tool calls...")
 
 	var ret []*eppb.ProcessingResponse
 
 	requestBodyBytes, err := json.Marshal(data)
 	if err != nil {
-		return nil, err
+		log.Printf("[EXT-PROC] Failed to marshal request body: %v", err)
+		return s.createEmptyBodyResponse(), nil
 	}
 
-	// Try to parse as JSON-RPC request
-	methodName := extractJSONRPCMethod(data)
+	// Try to extract MCP tool name
+	toolName := extractMCPToolName(data)
 
-	if methodName == "" {
-		log.Println("Request body does not contain JSON-RPC method or method could not be extracted")
-		if s.streaming {
-			ret = append(ret, &eppb.ProcessingResponse{
-				Response: &eppb.ProcessingResponse_RequestHeaders{
-					RequestHeaders: &eppb.HeadersResponse{},
-				},
-			})
-			ret = addStreamedBodyResponse(ret, requestBodyBytes)
-			return ret, nil
-		} else {
-			ret = append(ret, &eppb.ProcessingResponse{
-				Response: &eppb.ProcessingResponse_RequestBody{
-					RequestBody: &eppb.BodyResponse{},
-				},
-			})
-		}
-		return ret, nil
+	if toolName == "" {
+		log.Println("[EXT-PROC] No MCP tool name found, proceeding without header")
+		return s.createEmptyBodyResponse(), nil
 	}
 
-	log.Printf("[EXT-PROC] Extracted JSON-RPC method: %s", methodName)
+	log.Printf("[EXT-PROC] Extracted MCP tool name: %s", toolName)
 	metrics.RecordSuccessCounter()
 
 	if s.streaming {
@@ -89,8 +73,8 @@ func (s *Server) HandleRequestBody(ctx context.Context, data map[string]any) ([]
 							SetHeaders: []*basepb.HeaderValueOption{
 								{
 									Header: &basepb.HeaderValue{
-										Key:      methodHeader,
-										RawValue: []byte(methodName),
+										Key:      toolHeader,
+										RawValue: []byte(toolName),
 									},
 								},
 							},
@@ -100,24 +84,23 @@ func (s *Server) HandleRequestBody(ctx context.Context, data map[string]any) ([]
 			},
 		})
 		ret = addStreamedBodyResponse(ret, requestBodyBytes)
-		log.Println("[EXT-PROC] Completed request body processing (streaming)")
+		log.Println("[EXT-PROC] Completed MCP processing (streaming)")
 		return ret, nil
 	}
 
-	log.Println("[EXT-PROC] Completed request body processing (non-streaming)")
+	log.Println("[EXT-PROC] Completed MCP processing")
 	return []*eppb.ProcessingResponse{
 		{
 			Response: &eppb.ProcessingResponse_RequestBody{
 				RequestBody: &eppb.BodyResponse{
 					Response: &eppb.CommonResponse{
-						// Necessary so that the new headers are used in the routing decision.
 						ClearRouteCache: true,
 						HeaderMutation: &eppb.HeaderMutation{
 							SetHeaders: []*basepb.HeaderValueOption{
 								{
 									Header: &basepb.HeaderValue{
-										Key:      methodHeader,
-										RawValue: []byte(methodName),
+										Key:      toolHeader,
+										RawValue: []byte(toolName),
 									},
 								},
 							},
@@ -129,36 +112,82 @@ func (s *Server) HandleRequestBody(ctx context.Context, data map[string]any) ([]
 	}, nil
 }
 
-// extractJSONRPCMethod safely extracts the method from JSON-RPC request
-func extractJSONRPCMethod(data map[string]any) string {
+// extractMCPToolName safely extracts the tool name from MCP tool call request
+func extractMCPToolName(data map[string]any) string {
 	// Check if this is a JSON-RPC request
 	jsonrpcVal, ok := data["jsonrpc"]
 	if !ok {
-		log.Println("Request is not JSON-RPC format (missing jsonrpc field)")
 		return ""
 	}
 
 	jsonrpcStr, ok := jsonrpcVal.(string)
 	if !ok || jsonrpcStr != "2.0" {
-		log.Println("Request is not JSON-RPC 2.0 format")
 		return ""
 	}
 
-	// Extract method field
+	// Extract method field and check if it's tools/call
 	methodVal, ok := data["method"]
 	if !ok {
-		log.Println("JSON-RPC request missing method field")
 		return ""
 	}
 
 	methodStr, ok := methodVal.(string)
 	if !ok {
-		log.Println("JSON-RPC method is not a string")
 		return ""
 	}
 
-	log.Printf("Found JSON-RPC method: %s", methodStr)
-	return methodStr
+	if methodStr != "tools/call" {
+		return ""
+	}
+
+	// Extract params
+	paramsVal, ok := data["params"]
+	if !ok {
+		log.Println("[EXT-PROC] MCP tool call missing params field")
+		return ""
+	}
+
+	paramsMap, ok := paramsVal.(map[string]interface{})
+	if !ok {
+		log.Println("[EXT-PROC] MCP tool call params is not an object")
+		return ""
+	}
+
+	// Extract tool name
+	nameVal, ok := paramsMap["name"]
+	if !ok {
+		log.Println("[EXT-PROC] MCP tool call missing name field in params")
+		return ""
+	}
+
+	nameStr, ok := nameVal.(string)
+	if !ok {
+		log.Println("[EXT-PROC] MCP tool call name is not a string")
+		return ""
+	}
+
+	return nameStr
+}
+
+// createEmptyBodyResponse creates a response that doesn't modify the request
+func (s *Server) createEmptyBodyResponse() []*eppb.ProcessingResponse {
+	if s.streaming {
+		return []*eppb.ProcessingResponse{
+			{
+				Response: &eppb.ProcessingResponse_RequestHeaders{
+					RequestHeaders: &eppb.HeadersResponse{},
+				},
+			},
+		}
+	}
+
+	return []*eppb.ProcessingResponse{
+		{
+			Response: &eppb.ProcessingResponse_RequestBody{
+				RequestBody: &eppb.BodyResponse{},
+			},
+		},
+	}
 }
 
 func addStreamedBodyResponse(responses []*eppb.ProcessingResponse, requestBodyBytes []byte) []*eppb.ProcessingResponse {
@@ -180,31 +209,12 @@ func addStreamedBodyResponse(responses []*eppb.ProcessingResponse, requestBodyBy
 	})
 }
 
-// HandleRequestHeaders handles request headers.
+// HandleRequestHeaders handles request headers minimally.
 func (s *Server) HandleRequestHeaders(headers *eppb.HttpHeaders) ([]*eppb.ProcessingResponse, error) {
-	log.Println("[EXT-PROC] Starting request header processing...")
-
-	// Add 500ms delay for debugging execution order
-	log.Println("[EXT-PROC] Adding 500ms delay for debugging...")
-	time.Sleep(500 * time.Millisecond)
-
-	log.Println("[EXT-PROC] Completed request header processing")
-
 	return []*eppb.ProcessingResponse{
 		{
 			Response: &eppb.ProcessingResponse_RequestHeaders{
 				RequestHeaders: &eppb.HeadersResponse{},
-			},
-		},
-	}, nil
-}
-
-// HandleRequestTrailers handles request trailers.
-func (s *Server) HandleRequestTrailers(trailers *eppb.HttpTrailers) ([]*eppb.ProcessingResponse, error) {
-	return []*eppb.ProcessingResponse{
-		{
-			Response: &eppb.ProcessingResponse_RequestTrailers{
-				RequestTrailers: &eppb.TrailersResponse{},
 			},
 		},
 	}, nil

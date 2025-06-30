@@ -18,20 +18,13 @@ package handlers
 
 import (
 	"log"
-	"time"
 
 	eppb "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 )
 
 // HandleResponseHeaders handles response headers.
 func (s *Server) HandleResponseHeaders(headers *eppb.HttpHeaders) ([]*eppb.ProcessingResponse, error) {
-	log.Println("[EXT-PROC] Starting response header processing...")
-
-	// Add 500ms delay for debugging execution order
-	log.Println("[EXT-PROC] Adding 500ms delay for response header processing...")
-	time.Sleep(500 * time.Millisecond)
-
-	log.Println("[EXT-PROC] Completed response header processing")
+	log.Println("[EXT-PROC] Processing response headers...")
 
 	return []*eppb.ProcessingResponse{
 		{
@@ -44,20 +37,12 @@ func (s *Server) HandleResponseHeaders(headers *eppb.HttpHeaders) ([]*eppb.Proce
 
 // HandleResponseBody handles response bodies.
 func (s *Server) HandleResponseBody(body *eppb.HttpBody) ([]*eppb.ProcessingResponse, error) {
-	log.Printf("[EXT-PROC] Starting response body processing... (size: %d, end_of_stream: %t)",
+	log.Printf("[EXT-PROC] Processing response body... (size: %d, end_of_stream: %t)",
 		len(body.GetBody()), body.GetEndOfStream())
-
-	// Add 500ms delay for debugging execution order
-	log.Println("[EXT-PROC] Adding 500ms delay for response body processing...")
-	time.Sleep(500 * time.Millisecond)
 
 	// Log the response body content if it's not too large
 	if len(body.GetBody()) > 0 && len(body.GetBody()) < 1000 {
 		log.Printf("[EXT-PROC] Response body content: %s", string(body.GetBody()))
-	}
-
-	if body.GetEndOfStream() {
-		log.Println("[EXT-PROC] Completed response body processing")
 	}
 
 	return []*eppb.ProcessingResponse{
@@ -71,13 +56,7 @@ func (s *Server) HandleResponseBody(body *eppb.HttpBody) ([]*eppb.ProcessingResp
 
 // HandleResponseTrailers handles response trailers.
 func (s *Server) HandleResponseTrailers(trailers *eppb.HttpTrailers) ([]*eppb.ProcessingResponse, error) {
-	log.Println("[EXT-PROC] Starting response trailer processing...")
-
-	// Add 500ms delay for debugging execution order
-	log.Println("[EXT-PROC] Adding 500ms delay for response trailer processing...")
-	time.Sleep(500 * time.Millisecond)
-
-	log.Println("[EXT-PROC] Completed response trailer processing")
+	log.Println("[EXT-PROC] Processing response trailers...")
 
 	return []*eppb.ProcessingResponse{
 		{

@@ -35,30 +35,11 @@ static_resources:
                     domains:
                       - "*"
                     routes:
-                      # Route JSON-RPC calls based on method names
-                      - match:
-                          prefix: "/"
-                          headers:
-                            - name: "x-rpc-method"
-                              string_match:
-                                exact: "echo1"
-                        route:
-                          cluster: echo1
-                          timeout: 30s
-                      - match:
-                          prefix: "/"
-                          headers:
-                            - name: "x-rpc-method"
-                              string_match:
-                                exact: "echo2"
-                        route:
-                          cluster: echo2
-                          timeout: 30s
-                      # Default route to echo2
+                      # Route all requests to MCP server
                       - match:
                           prefix: "/"
                         route:
-                          cluster: echo2
+                          cluster: mcp-server
                           timeout: 30s
               http_filters:
                 - name: envoy.filters.http.ext_proc
@@ -93,32 +74,19 @@ static_resources:
                   typed_config:
                     "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
   clusters:
-    - name: echo1
+    - name: mcp-server
       connect_timeout: 0.25s
       type: STRICT_DNS
       lb_policy: round_robin
       load_assignment:
-        cluster_name: echo1
+        cluster_name: mcp-server
         endpoints:
         - lb_endpoints:
           - endpoint:
               address:
                 socket_address:
-                  address: echo1
-                  port_value: 8080
-    - name: echo2
-      connect_timeout: 0.25s
-      type: STRICT_DNS
-      lb_policy: round_robin
-      load_assignment:
-        cluster_name: echo2
-        endpoints:
-        - lb_endpoints:
-          - endpoint:
-              address:
-                socket_address:
-                  address: echo2
-                  port_value: 8080
+                  address: mcp-server
+                  port_value: 8081
     - name: ext-proc
       connect_timeout: 5s
       type: strict_dns

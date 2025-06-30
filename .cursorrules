@@ -3,16 +3,16 @@
 ## Project Overview
 This is an experimentation environment for request body-based routing using Envoy proxy with custom filters. The system consists of:
 - **Envoy Proxy**: Main ingress point with custom filter configuration
-- **Ext-Proc Filter**: Go-based external processing filter that parses request bodies and adds routing headers
+- **Ext-Proc Filter**: Go-based external processing filter that parses MCP tool call request bodies and adds routing headers
 - **Debug WASM Filter**: Rust-based WebAssembly filter for logging and debugging
-- **Echo Servers**: Simple HTTP echo servers for testing routing
+- **MCP Server**: Model Context Protocol server for handling tool calls
 - **Docker Compose**: Local development environment orchestration
 
 ## Architecture
 ```
-Client Request → Envoy → Ext-Proc Filter → Debug WASM Filter → Echo Server 1/2
+Client Request → Envoy → Ext-Proc Filter → Debug WASM Filter → MCP Server
                    ↓         ↓                     ↓
-               Parse Body → Add Headers → Log Processing → Route Decision
+               Parse Body → Add Headers → Log Processing → Handle MCP Tool Calls
 ```
 
 ## Key Directories & Files
@@ -28,7 +28,7 @@ Client Request → Envoy → Ext-Proc Filter → Debug WASM Filter → Echo Serv
 - **Rust**: Debug WASM filter implementation
 - **Envoy Proxy**: HTTP proxy and load balancer
 - **Docker**: Containerization and local development
-- **HTTP Echo Servers**: Simple test backends
+- **MCP Server**: Model Context Protocol server backend
 
 ## Coding Standards
 
@@ -39,7 +39,7 @@ Client Request → Envoy → Ext-Proc Filter → Debug WASM Filter → Echo Serv
 - Use dependency injection for testability
 - Follow the existing package structure under `pkg/bbr/`
 - Write unit tests for all business logic
-- Use meaningful variable names that reflect the domain (e.g., `requestBody`, `routingHeader`)
+- Use meaningful variable names that reflect the domain (e.g., `requestBody`, `toolName`)
 
 ### Rust Code (Debug WASM Filter)
 - Follow Rust conventions and use `rustfmt`
@@ -56,27 +56,29 @@ Client Request → Envoy → Ext-Proc Filter → Debug WASM Filter → Echo Serv
 
 ## Development Workflow
 1. **Local Development**: Use `make up` to run the full stack locally
-2. **Testing**: Test both individual filters and end-to-end routing behavior
+2. **Testing**: Test both individual filters and end-to-end MCP tool call behavior
 3. **Debugging**: Use Envoy admin interface and structured logging for troubleshooting
 4. **Iteration**: Hot-reload capabilities for rapid development cycles
 
 ## Common Tasks
 - **Adding new routing rules**: Modify `envoy.yaml` and corresponding filter logic
-- **Testing body parsing**: Use `test-execution-order.sh` or curl with JSON-RPC payloads
+- **Testing MCP tool calls**: Use curl with MCP tool call JSON payloads
 - **WASM deployment**: Build with `make build-wasm` (uses `cargo build --target wasm32-wasip1 --release`)
 - **Ext-proc debugging**: Check logs and use Envoy's ext_proc statistics
 
-## Request Body Parsing Context
-- The system intercepts HTTP requests and parses JSON-RPC messages
-- Routing decisions are made based on the `method` field in JSON-RPC requests
-- The `x-rpc-method` header is added to facilitate upstream selection
-- Simple JSON-RPC parsing without complex protocol handling
+## MCP Tool Call Processing Context
+- The system intercepts HTTP requests and parses MCP tool call messages
+- Tool calls are identified by `method: "tools/call"` in JSON-RPC requests
+- The tool name is extracted from `params.name` field
+- The `x-mcp-tool` header is added to facilitate processing and debugging
+- All requests are routed to the single MCP server backend
 
-## Simple JSON-RPC Routing
-- **Echo1 requests**: `method: "echo1"` → routes to echo1 server
-- **Echo2 requests**: `method: "echo2"` → routes to echo2 server
-- **Default requests**: Route to echo2 server
-- **Method extraction**: Extracts from `method` field in JSON-RPC request body
+## MCP Tool Call Structure
+- **Tool Call Format**: JSON-RPC 2.0 with `method: "tools/call"`
+- **Tool Name Extraction**: From `params.name` field
+- **Header Addition**: `x-mcp-tool` header with extracted tool name
+- **Backend Routing**: All requests go to the MCP server on port 8081
+- **Graceful Handling**: Non-MCP requests pass through without modification
 
 ## Debug WASM Filter
 - **Purpose**: Logging and debugging execution flow
@@ -101,29 +103,29 @@ Client Request → Envoy → Ext-Proc Filter → Debug WASM Filter → Echo Serv
 - Consider rate limiting and abuse prevention
 
 ## Testing Strategy
-- Unit tests for parsing logic
-- Integration tests with sample requests
+- Unit tests for MCP parsing logic
+- Integration tests with sample MCP tool call requests
 - End-to-end tests through the full proxy chain
-- Use `test-execution-order.sh` for debugging execution flow
+- Test graceful handling of non-MCP requests
 
 ## Deployment Considerations
 - WASM filters are deployed as part of Envoy configuration
 - Ext-proc filters run as separate services
-- Echo servers provide simple test backends
+- MCP server provides the backend functionality
 - Monitor filter performance and error rates
 
 ## When suggesting code changes:
 - Consider the impact on both Go and Rust components
 - Ensure changes work with the existing Envoy configuration
-- Provide examples of how to test the changes locally
+- Provide examples of how to test the changes locally with MCP tool calls
 - Consider backwards compatibility with existing routing rules
 - Suggest appropriate logging for debugging purposes
 
 ## Common Debugging Steps:
 1. Check Envoy admin interface at :9901/stats for filter metrics
-2. Examine ext-proc service logs for parsing errors
+2. Examine ext-proc service logs for MCP parsing errors
 3. Verify WASM module loading in Envoy logs
-4. Test routing with `test-execution-order.sh` or curl commands
+4. Test MCP tool calls with curl commands
 5. Use Envoy's request tracing for end-to-end visibility
 6. Monitor execution order with debug delays when needed
 
@@ -132,4 +134,31 @@ Client Request → Envoy → Ext-Proc Filter → Debug WASM Filter → Echo Serv
 - `make up`: Start the environment with rebuilding
 - `make up-fast`: Start without rebuilding
 - `make down`: Stop the environment
-- `make rebuild-ext-proc`: Rebuild just the ext-proc service 
+- `make rebuild-ext-proc`: Rebuild just the ext-proc service
+
+## MCP Server Details:
+- **Image**: `quay.io/dmartin/mcp-gateway-poc-server1`
+- **Port**: 8081
+- **Purpose**: Handles MCP tool calls routed through the proxy
+- **Integration**: Receives requests with `x-mcp-tool` header for debugging/processing
+
+## Example MCP Tool Call:
+```json
+{
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "tools/call",
+    "params": {
+      "name": "server1-echo",
+      "arguments": {
+        "message": "Hello from MCP Gateway!"
+      }
+    }
+}
+```
+
+This request will:
+1. Be parsed by the ext-proc filter
+2. Have `x-mcp-tool: server1-echo` header added
+3. Be logged by the WASM filter
+4. Be routed to the MCP server for processing 

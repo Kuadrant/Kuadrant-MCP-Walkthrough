@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ext-proc-x-mcp-tool
+  labels:
+    app: ext-proc-x-mcp-tool
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ext-proc-x-mcp-tool
+  template:
+    metadata:
+      labels:
+        app: ext-proc-x-mcp-tool
+    spec:
+      containers:
+      - name: ext-proc
+        image: quay.io/dmartin/ext-proc-x-mcp-tool:latest
+        ports:
+        - containerPort: 50051
+          name: grpc
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "50051"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        livenessProbe:
+          grpc:
+            port: 50051
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          grpc:
+            port: 50051
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ext-proc-x-mcp-tool
+  labels:
+    app: ext-proc-x-mcp-tool
+spec:
+  type: ClusterIP
+  ports:
+  - port: 50051
+    targetPort: 50051
+    protocol: TCP
+    name: grpc
+  selector:
+    app: ext-proc-x-mcp-tool 
