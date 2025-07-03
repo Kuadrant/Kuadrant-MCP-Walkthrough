@@ -1,0 +1,120 @@
+# Envoy configuration snippet for adding ext-proc-x-mcp-tool to existing Envoy
+# This shows the relevant parts to add to your existing Envoy configuration
+
+# Add this to your http_filters section in the HTTP connection manager
+# Place it before the router filter
+http_filters:
+  # ... your existing filters ...
+  
+  # Add the ext-proc filter for MCP tool call processing
+  - name: envoy.filters.http.ext_proc
+    typed_config:
+      "@type": "type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor"
+      failure_mode_allow: false
+      message_timeout: 10s
+      processing_mode:
+        request_header_mode: "SEND"
+        response_header_mode: "SEND"
+        request_body_mode: "BUFFERED"
+        response_body_mode: "BUFFERED"
+        request_trailer_mode: "SKIP"
+        response_trailer_mode: "SKIP"
+      grpc_service:
+        envoy_grpc:
+          cluster_name: ext-proc-x-mcp-tool
+  
+  # ... your other filters ...
+  
+  # Router filter should be last
+  - name: envoy.filters.http.router
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+---
+
+# Add this cluster to your clusters section
+clusters:
+  # ... your existing clusters ...
+  
+  # Cluster for the ext-proc service in Kubernetes
+  - name: ext-proc-x-mcp-tool
+    connect_timeout: 5s
+    type: strict_dns
+    lb_policy: round_robin
+    http2_protocol_options: {}
+    load_assignment:
+      cluster_name: ext-proc-x-mcp-tool
+      endpoints:
+        - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    # Use the Kubernetes service name and port
+                    address: ext-proc-x-mcp-tool.default.svc.cluster.local
+                    port_value: 50051
+    health_checks:
+      - timeout: 1s
+        interval: 5s
+        unhealthy_threshold: 2
+        healthy_threshold: 2
+        grpc_health_check:
+          service_name: ""
+
+---
+
+# Example complete HTTP connection manager configuration
+# showing where the ext-proc filter fits in
+http_connection_manager_example:
+  "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+  stat_prefix: ingress_http
+  codec_type: AUTO
+  request_timeout: 30s
+  stream_idle_timeout: 30s
+  route_config:
+    name: local_routes
+    virtual_hosts:
+      - name: local_service
+        domains:
+          - "*"
+        routes:
+          # Your routing rules here - the ext-proc filter will add x-mcp-tool header
+          # which you can use for routing decisions
+          - match:
+              prefix: "/"
+              headers:
+                - name: "x-mcp-tool"
+                  string_match:
+                    exact: "server1-echo"
+            route:
+              cluster: your-mcp-server-cluster
+              timeout: 30s
+          # Default route
+          - match:
+              prefix: "/"
+            route:
+              cluster: your-default-cluster
+              timeout: 30s
+  http_filters:
+    # Add the ext-proc filter for MCP processing
+    - name: envoy.filters.http.ext_proc
+      typed_config:
+        "@type": "type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor"
+        failure_mode_allow: false
+        message_timeout: 10s
+        processing_mode:
+          request_header_mode: "SEND"
+          response_header_mode: "SEND"
+          request_body_mode: "BUFFERED"
+          response_body_mode: "BUFFERED"
+          request_trailer_mode: "SKIP"
+          response_trailer_mode: "SKIP"
+        grpc_service:
+          envoy_grpc:
+            cluster_name: ext-proc-x-mcp-tool
+    
+    # Optional: Add other filters like WASM, CORS, etc.
+    
+    # Router filter must be last
+    - name: envoy.filters.http.router
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router 
