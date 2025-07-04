@@ -1,0 +1,19 @@
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: mcp-tool-auth
+  namespace: mcp-server
+spec:
+  rules:
+    authorization:
+      allow-printenv-only:
+        metrics: false
+        patternMatching:
+          patterns:
+            - predicate: |
+                !request.headers.exists(h, h.lowerAscii() == "x-mcp-tools") || request.headers.exists(h, h.lowerAscii() == "x-mcp-tools" && request.headers[h] == "server1-echo_headers")
+        priority: 0
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: mcp-gateway

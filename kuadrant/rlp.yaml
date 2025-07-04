@@ -1,0 +1,18 @@
+apiVersion: kuadrant.io/v1
+kind: RateLimitPolicy
+metadata:
+  name: mcp-rlp
+  namespace: mcp-gateway
+spec:
+  defaults:
+    limits:
+      low-limit:
+        rates:
+          - limit: 20
+            window: 60s
+    strategy: merge
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: mcp-streamable
+

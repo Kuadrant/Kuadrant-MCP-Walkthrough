@@ -1,0 +1,17 @@
+apiVersion: kuadrant.io/v1
+kind: DNSPolicy
+metadata:
+  name: mcp-streamable-dnspolicy
+  namespace: mcp-gateway
+spec:
+  loadBalancing:
+    defaultGeo: true
+    geo: GEO-NA
+    weight: 120
+  providerRefs:
+    - name: aws-credentials
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: mcp-streamable
+

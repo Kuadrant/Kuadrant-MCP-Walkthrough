@@ -1,0 +1,17 @@
+apiVersion: kuadrant.io/v1
+kind: RateLimitPolicy
+metadata:
+  name: mcp-per-tool
+  namespace: mcp-server
+spec:
+  limits:
+    server1-echo_headers:
+      rates:
+        - limit: 10
+          window: 60s
+      when:
+        - predicate: 'request.headers.exists(h, h.lowerAscii() == "x-mcp-tools" && request.headers[h] == "server1-echo_headers")'
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: mcp-gateway

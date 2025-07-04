@@ -1,0 +1,16 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: mcp-streamable
+  namespace: mcp-gateway
+spec:
+  gatewayClassName: istio
+  listeners:
+    - allowedRoutes:
+        namespaces:
+          from: All
+      hostname: '*.rlawton.hcpapps.net'
+      name: api-http
+      port: 80
+      protocol: HTTP
+

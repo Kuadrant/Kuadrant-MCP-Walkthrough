@@ -1,0 +1,37 @@
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: mcp-auth
+  namespace: mcp-gateway
+spec:
+  defaults:
+    rules:
+      authentication:
+        api-key-users:
+          apiKey:
+            allNamespaces: false
+            selector:
+              matchLabels:
+                app: mcp-streamable
+          credentials:
+            authorizationHeader:
+              prefix: APIKEY
+          metrics: false
+          priority: 0
+      response:
+        success:
+          filters:
+            identity:
+              json:
+                properties:
+                  userid:
+                    selector: auth.identity.metadata.annotations.secret\.kuadrant\.io/user-id
+              metrics: false
+              priority: 0
+    strategy: merge
+    when:
+      - predicate: request.path != '/health'
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: mcp-streamable
