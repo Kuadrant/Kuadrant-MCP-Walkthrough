@@ -7,61 +7,63 @@ Prerequisites
 
 1. Create the MCP Server namespace:
 
-```sh
+    ```sh
     kubectl create ns mcp-server
-```
+    ```
+
 1. Deploy the MCP gateway server.
 
-We have created a image for the MCP Gateway that can be used to deploy the MCP server(s) in your Kubernetes cluster.
-  ```bash
+    Note: We have created a image for the MCP Gateway that can be used to deploy the MCP server(s) in your Kubernetes cluster.
+
+    ```sh
     kubectl apply -f mcp-gateway/
-```
-For more information about the MCP Gateway piece, see the [MCP Gateway repository](https://github.com/david-martin/mcp-gateway-poc) .
+    ```
+    For more information about the MCP Gateway piece, see the [MCP Gateway repository](https://github.com/david-martin/mcp-gateway-poc) .
 
 
 1.  Ensure the mcp gateway (Server) is up and running:
-```bash
+    ```sh
     kubectl get pods -n mcp-server
-```
+    ```
 
 ## Deploying Kuadrant policies 
 
 1. Clone the Repository
-    ```bash
+    ```sh
     git clone https://github.com/your-org/Kuadrant-MCP-Walkthrough.git
     cd Kuadrant-MCP-Walkthrough
     ```
 
  1. Create the gateway namespace:
 
-```sh
-    kubectl create ns mcp-gateway
-```
+    ```sh
+        kubectl create ns mcp-gateway
+    ```
 
 1. Create the secret credentials in the same namespace as the Gateway - these will be used to configure DNS:
 
-```sh
-   kubectl -n mcp-gateway create secret generic aws-credentials \
-   --type=kuadrant.io/aws \
-   --from-literal=AWS_ACCESS_KEY_ID=$KUADRANT_AWS_ACCESS_KEY_ID \
-   --from-literal=AWS_SECRET_ACCESS_KEY=$KUADRANT_AWS_SECRET_ACCESS_KEY
-```
+    ```sh
+    kubectl -n mcp-gateway create secret generic aws-credentials \
+    --type=kuadrant.io/aws \
+    --from-literal=AWS_ACCESS_KEY_ID=$KUADRANT_AWS_ACCESS_KEY_ID \
+    --from-literal=AWS_SECRET_ACCESS_KEY=$KUADRANT_AWS_SECRET_ACCESS_KEY
+    ```
 
 1. Create the secret credentials in the cert-manager namespace:
 
-```sh
+    ```sh
 
-   kubectl -n cert-manager create secret generic aws-credentials \
-   --type=kuadrant.io/aws \
-   --from-literal=AWS_ACCESS_KEY_ID=$KUADRANT_AWS_ACCESS_KEY_ID \
-   --from-literal=AWS_SECRET_ACCESS_KEY=$KUADRANT_AWS_SECRET_ACCESS_KEY
-```   
+    kubectl -n cert-manager create secret generic aws-credentials \
+    --type=kuadrant.io/aws \
+    --from-literal=AWS_ACCESS_KEY_ID=$KUADRANT_AWS_ACCESS_KEY_ID \
+    --from-literal=AWS_SECRET_ACCESS_KEY=$KUADRANT_AWS_SECRET_ACCESS_KEY
+    ```   
 
 1. Apply the policies
-    ```bash
+    ```sh
     kubectl apply -f kuadrant/
     ```
-    This will deploy a:
+    This will deploy :
     * Gateway
     * AuthN Auth policy
     * AuthZ Auth policy for specific MCP tools
@@ -90,9 +92,8 @@ Note: Adding custom hearers to MCP Inspector is not supported in the current ver
 
 1. Access MCP Inspector
 When the MCP Inspector is running, you can access it via the following URL. The auth token will be outputted in the terminal when you run the inspector. Replace `<your-auth-token>` with the actual token provided by the MCP Inspector.
-```
-http://localhost:6274/?MCP_PROXY_AUTH_TOKEN=<your-auth-token>
-```
+    ```
+    http://localhost:6274/?MCP_PROXY_AUTH_TOKEN=<your-auth-token>
+    ```
 1. From there you can setup the MCP Inspector to use authorisation and test out the tools the MCP server provides.
 
-    
