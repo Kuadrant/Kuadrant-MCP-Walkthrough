@@ -3,6 +3,21 @@ Prerequisites
 - A Kubernetes cluster 
 - Kuadrant installed, please see the Kuadrant [docs](https://docs.kuadrant.io/latest/install-helm/) for more information.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    C[MCP Client] --> Gateway
+    E[Envoy/WASM] --> G
+    G[MCP Gateway] --> A[MCP Server 1]
+    G --> B[MCP Server 2]
+    subgraph Gateway
+        direction TB
+        AP@{ shape: notch-rect, label: "AuthPolicy" } -.-> E
+        RLP@{ shape: notch-rect, label: "RateLimitPolicy" } -.-> E
+    end
+```
+
 ## Deploy MCP Gateway aka MCP server(s)
 
 Create the MCP Server namespace:
